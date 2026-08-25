@@ -46,7 +46,7 @@
         .full-width { grid-column: span 2; }
         @media (max-width: 800px) { .container, .full-width { grid-template-columns: 1fr; grid-column: span 1; } }
 
-        label { font-weight: bold; display: block; margin-bottom: 5px; color: #aaa; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; color: #aaa; font-size: 14px; }
         
         textarea, input[type="text"] {
             width: 100%;
@@ -66,7 +66,26 @@
             display: flex;
             gap: 15px;
             align-items: flex-end;
+            margin-bottom: 10px;
+        }
+
+        .gradient-options {
+            display: flex;
+            gap: 20px;
+            align-items: center;
             margin-bottom: 15px;
+            background: #2a2a2a;
+            padding: 10px 15px;
+            border-radius: 6px;
+        }
+
+        .gradient-options label {
+            margin: 0;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
         }
 
         .color-picker { display: flex; flex-direction: column; }
@@ -131,9 +150,17 @@
                     <label>End</label>
                     <input type="color" id="grad-c2" value="#0000ff">
                 </div>
-                <button onclick="generateGradient()">Generate Tag</button>
             </div>
-            <textarea id="grad-output" rows="2" readonly placeholder="Your <color=#HEX>g</color><color=#HEX>r</color>adient will appear here..."></textarea>
+            
+            <!-- NEW FORMATTING TOGGLES -->
+            <div class="gradient-options">
+                <label><input type="checkbox" id="grad-bold"> <b>Bold</b></label>
+                <label><input type="checkbox" id="grad-italic"> <i>Italic</i></label>
+                <label>Size: <input type="text" id="grad-size" placeholder="e.g. 130%" style="width: 80px; padding: 5px; height: 30px; margin-left: 5px;"></label>
+                <button onclick="generateGradient()" style="margin-left: auto;">Generate Tag</button>
+            </div>
+
+            <textarea id="grad-output" rows="3" readonly placeholder="Your formatted <color=#HEX>g</color><color=#HEX>r</color>adient will appear here..."></textarea>
         </div>
 
         <!-- Left Column: Editors -->
@@ -173,7 +200,7 @@
     </div>
 
     <script>
-        // --- UNITY RICH TEXT PARSER (Fixed & Optimized) ---
+        // --- UNITY RICH TEXT PARSER ---
         function parseUnityTags(text) {
             if (!text) return "";
             
@@ -186,17 +213,21 @@
                 .replace(/\\n/g, "<br>")
                 .replace(/\n/g, "<br>")
                 
-                // Bold and Italics
+                // Bold, Italics, Underline, Strikethrough
                 .replace(/&lt;b&gt;/gi, "<strong>")
                 .replace(/&lt;\/b&gt;/gi, "</strong>")
                 .replace(/&lt;i&gt;/gi, "<em>")
                 .replace(/&lt;\/i&gt;/gi, "</em>")
+                .replace(/&lt;u&gt;/gi, '<span style="text-decoration: underline;">')
+                .replace(/&lt;\/u&gt;/gi, "</span>")
+                .replace(/&lt;s&gt;/gi, '<span style="text-decoration: line-through;">')
+                .replace(/&lt;\/s&gt;/gi, "</span>")
                 
                 // Color parsing (handles hex and basic words)
                 .replace(/&lt;color=(#?[A-Za-z0-9]+)&gt;/gi, '<span style="color: $1;">')
                 .replace(/&lt;\/color&gt;/gi, "</span>")
                 
-                // Size parsing (Unity uses percentages natively, we map them directly to font-size)
+                // Size parsing
                 .replace(/&lt;size=(\d+)(%?)&gt;/gi, (match, val, percentSign) => {
                     return `<span style="font-size: ${val}${percentSign ? '%' : 'px'};">`;
                 })
@@ -205,7 +236,7 @@
             return html;
         }
 
-        // --- GRADIENT LOGIC (Character-by-character Unity Wrap) ---
+        // --- GRADIENT LOGIC ---
         function hexToRgb(hex) {
             let bigint = parseInt(hex.replace("#", ""), 16);
             return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
@@ -219,17 +250,23 @@
             let text = document.getElementById('grad-text').value;
             let c1 = document.getElementById('grad-c1').value;
             let c2 = document.getElementById('grad-c2').value;
+            let isBold = document.getElementById('grad-bold').checked;
+            let isItalic = document.getElementById('grad-italic').checked;
+            let size = document.getElementById('grad-size').value.trim();
             let output = document.getElementById('grad-output');
             
             if(!text) { output.value = ""; return; }
 
+            // Strip existing tags so we don't accidentally gradientize brackets
+            let cleanText = text.replace(/<[^>]*>/g, '');
+            let len = cleanText.length;
+            
             let rgb1 = hexToRgb(c1);
             let rgb2 = hexToRgb(c2);
             let result = "";
-            let len = text.length;
 
             for(let i = 0; i < len; i++) {
-                if(text[i] === ' ') {
+                if(cleanText[i] === ' ') {
                     result += ' ';
                     continue;
                 }
@@ -238,12 +275,15 @@
                 let g = Math.round(rgb1[1] + (rgb2[1] - rgb1[1]) * ratio);
                 let b = Math.round(rgb1[2] + (rgb2[2] - rgb1[2]) * ratio);
                 
-                result += `<color=${rgbToHex(r,g,b)}>${text[i]}</color>`;
+                result += `<color=${rgbToHex(r,g,b)}>${cleanText[i]}</color>`;
             }
             
-            output.value = result;
+            // Apply wrappers
+            if (isBold) result = `<b>${result}</b>`;
+            if (isItalic) result = `<i>${result}</i>`;
+            if (size) result = `<size=${size}>${result}</size>`;
             
-            // Auto-select text for easy copying
+            output.value = result;
             output.select();
         }
 
@@ -258,13 +298,8 @@
                 // Update Live Preview
                 document.getElementById(`prev-${key}`).innerHTML = parseUnityTags(rawText);
                 
-                // Format for raw config file (ensuring actual newlines become literal \n to keep config clean)
-                // If a user typed \n, it stays \n. If they pressed ENTER, it becomes \n.
                 let configFormatted = rawText.replace(/\n/g, '\\n').replace(/\\n\\n/g, '\\n');
-                
-                // For 'meeting' mapped to 'OnMeeting' in EHR
                 let configKey = key === 'meeting' ? 'OnMeeting' : key;
-                
                 rawConfigStr += `${configKey}:${configFormatted}\n`;
             });
 
